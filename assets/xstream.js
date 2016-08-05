@@ -1232,11 +1232,864 @@ exports.default = Stream;
 
 },{}],2:[function(require,module,exports){
 "use strict";
+var core_1 = require('../core');
+var ConcatProducer = (function () {
+    function ConcatProducer(streams) {
+        this.streams = streams;
+        this.type = 'concat';
+        this.out = null;
+        this.i = 0;
+    }
+    ConcatProducer.prototype._start = function (out) {
+        this.out = out;
+        this.streams[this.i]._add(this);
+    };
+    ConcatProducer.prototype._stop = function () {
+        var streams = this.streams;
+        if (this.i < streams.length) {
+            streams[this.i]._remove(this);
+        }
+        this.i = 0;
+        this.out = null;
+    };
+    ConcatProducer.prototype._n = function (t) {
+        var u = this.out;
+        if (!u)
+            return;
+        u._n(t);
+    };
+    ConcatProducer.prototype._e = function (err) {
+        var u = this.out;
+        if (!u)
+            return;
+        u._e(err);
+    };
+    ConcatProducer.prototype._c = function () {
+        var u = this.out;
+        if (!u)
+            return;
+        var streams = this.streams;
+        streams[this.i]._remove(this);
+        if (++this.i < streams.length) {
+            streams[this.i]._add(this);
+        }
+        else {
+            u._c();
+        }
+    };
+    return ConcatProducer;
+}());
+
+function concat() {
+    var streams = [];
+    for (var _i = 0; _i < arguments.length; _i++) {
+        streams[_i - 0] = arguments[_i];
+    }
+    return new core_1.Stream(new ConcatProducer(streams));
+}
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.default = concat;
+
+},{"../core":1}],3:[function(require,module,exports){
+"use strict";
+var core_1 = require('../core');
+var DebounceOperator = (function () {
+    function DebounceOperator(dt, ins) {
+        this.dt = dt;
+        this.ins = ins;
+        this.type = 'debounce';
+        this.out = null;
+        this.value = null;
+        this.id = null;
+    }
+    DebounceOperator.prototype._start = function (out) {
+        this.out = out;
+        this.ins._add(this);
+    };
+    DebounceOperator.prototype._stop = function () {
+        this.ins._remove(this);
+        this.out = null;
+        this.value = null;
+        this.id = null;
+    };
+    DebounceOperator.prototype.clearInterval = function () {
+        var id = this.id;
+        if (id !== null) {
+            clearInterval(id);
+        }
+        this.id = null;
+    };
+    DebounceOperator.prototype._n = function (t) {
+        var _this = this;
+        var u = this.out;
+        if (!u)
+            return;
+        this.value = t;
+        this.clearInterval();
+        this.id = setInterval(function () {
+            _this.clearInterval();
+            u._n(t);
+        }, this.dt);
+    };
+    DebounceOperator.prototype._e = function (err) {
+        var u = this.out;
+        if (!u)
+            return;
+        this.clearInterval();
+        u._e(err);
+    };
+    DebounceOperator.prototype._c = function () {
+        var u = this.out;
+        if (!u)
+            return;
+        this.clearInterval();
+        u._c();
+    };
+    return DebounceOperator;
+}());
+
+function debounce(period) {
+    return function debounceOperator(ins) {
+        return new core_1.Stream(new DebounceOperator(period, ins));
+    };
+}
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.default = debounce;
+
+},{"../core":1}],4:[function(require,module,exports){
+"use strict";
+var core_1 = require('../core');
+var DelayOperator = (function () {
+    function DelayOperator(dt, ins) {
+        this.dt = dt;
+        this.ins = ins;
+        this.type = 'delay';
+        this.out = null;
+    }
+    DelayOperator.prototype._start = function (out) {
+        this.out = out;
+        this.ins._add(this);
+    };
+    DelayOperator.prototype._stop = function () {
+        this.ins._remove(this);
+        this.out = null;
+    };
+    DelayOperator.prototype._n = function (t) {
+        var u = this.out;
+        if (!u)
+            return;
+        var id = setInterval(function () {
+            u._n(t);
+            clearInterval(id);
+        }, this.dt);
+    };
+    DelayOperator.prototype._e = function (err) {
+        var u = this.out;
+        if (!u)
+            return;
+        var id = setInterval(function () {
+            u._e(err);
+            clearInterval(id);
+        }, this.dt);
+    };
+    DelayOperator.prototype._c = function () {
+        var u = this.out;
+        if (!u)
+            return;
+        var id = setInterval(function () {
+            u._c();
+            clearInterval(id);
+        }, this.dt);
+    };
+    return DelayOperator;
+}());
+
+function delay(period) {
+    return function delayOperator(ins) {
+        return new core_1.Stream(new DelayOperator(period, ins));
+    };
+}
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.default = delay;
+
+},{"../core":1}],5:[function(require,module,exports){
+"use strict";
+var core_1 = require('../core');
+var empty = {};
+var DropRepeatsOperator = (function () {
+    function DropRepeatsOperator(fn, ins) {
+        this.fn = fn;
+        this.ins = ins;
+        this.type = 'dropRepeats';
+        this.out = null;
+        this.v = empty;
+    }
+    DropRepeatsOperator.prototype._start = function (out) {
+        this.out = out;
+        this.ins._add(this);
+    };
+    DropRepeatsOperator.prototype._stop = function () {
+        this.ins._remove(this);
+        this.out = null;
+        this.v = empty;
+    };
+    DropRepeatsOperator.prototype.isEq = function (x, y) {
+        return this.fn ? this.fn(x, y) : x === y;
+    };
+    DropRepeatsOperator.prototype._n = function (t) {
+        var u = this.out;
+        if (!u)
+            return;
+        var v = this.v;
+        if (v === empty || !this.isEq(t, v)) {
+            u._n(t);
+        }
+        this.v = t;
+    };
+    DropRepeatsOperator.prototype._e = function (err) {
+        var u = this.out;
+        if (!u)
+            return;
+        u._e(err);
+    };
+    DropRepeatsOperator.prototype._c = function () {
+        var u = this.out;
+        if (!u)
+            return;
+        u._c();
+    };
+    return DropRepeatsOperator;
+}());
+exports.DropRepeatsOperator = DropRepeatsOperator;
+
+function dropRepeats(isEqual) {
+    if (isEqual === void 0) { isEqual = null; }
+    return function dropRepeatsOperator(ins) {
+        return new core_1.Stream(new DropRepeatsOperator(isEqual, ins));
+    };
+}
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.default = dropRepeats;
+
+},{"../core":1}],6:[function(require,module,exports){
+"use strict";
+var core_1 = require('../core');
+var OtherIL = (function () {
+    function OtherIL(out, op) {
+        this.out = out;
+        this.op = op;
+    }
+    OtherIL.prototype._n = function (t) {
+        this.op.up();
+    };
+    OtherIL.prototype._e = function (err) {
+        this.out._e(err);
+    };
+    OtherIL.prototype._c = function () {
+        this.op.up();
+    };
+    return OtherIL;
+}());
+var DropUntilOperator = (function () {
+    function DropUntilOperator(o, 
+        ins) {
+        this.o = o;
+        this.ins = ins;
+        this.type = 'dropUntil';
+        this.out = null;
+        this.oil = core_1.NO_IL; 
+        this.on = false;
+    }
+    DropUntilOperator.prototype._start = function (out) {
+        this.out = out;
+        this.o._add(this.oil = new OtherIL(out, this));
+        this.ins._add(this);
+    };
+    DropUntilOperator.prototype._stop = function () {
+        this.ins._remove(this);
+        this.o._remove(this.oil);
+        this.out = null;
+        this.oil = null;
+    };
+    DropUntilOperator.prototype.up = function () {
+        this.on = true;
+        this.o._remove(this.oil);
+        this.oil = null;
+    };
+    DropUntilOperator.prototype._n = function (t) {
+        var u = this.out;
+        if (!u)
+            return;
+        if (!this.on)
+            return;
+        u._n(t);
+    };
+    DropUntilOperator.prototype._e = function (err) {
+        var u = this.out;
+        if (!u)
+            return;
+        u._e(err);
+    };
+    DropUntilOperator.prototype._c = function () {
+        var u = this.out;
+        if (!u)
+            return;
+        this.up();
+        u._c();
+    };
+    return DropUntilOperator;
+}());
+exports.DropUntilOperator = DropUntilOperator;
+
+function dropUntil(other) {
+    return function dropUntilOperator(ins) {
+        return new core_1.Stream(new DropUntilOperator(other, ins));
+    };
+}
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.default = dropUntil;
+
+},{"../core":1}],7:[function(require,module,exports){
+"use strict";
+var core_1 = require('../core');
+var FCIL = (function () {
+    function FCIL(out, op) {
+        this.out = out;
+        this.op = op;
+    }
+    FCIL.prototype._n = function (t) {
+        this.out._n(t);
+    };
+    FCIL.prototype._e = function (err) {
+        this.out._e(err);
+    };
+    FCIL.prototype._c = function () {
+        this.op.less();
+    };
+    return FCIL;
+}());
+var FlattenConcOperator = (function () {
+    function FlattenConcOperator(ins) {
+        this.ins = ins;
+        this.type = 'flattenConcurrently';
+        this.active = 1; 
+        this.out = null;
+    }
+    FlattenConcOperator.prototype._start = function (out) {
+        this.out = out;
+        this.ins._add(this);
+    };
+    FlattenConcOperator.prototype._stop = function () {
+        this.ins._remove(this);
+        this.active = 1;
+        this.out = null;
+    };
+    FlattenConcOperator.prototype.less = function () {
+        if (--this.active === 0) {
+            var u = this.out;
+            if (!u)
+                return;
+            u._c();
+        }
+    };
+    FlattenConcOperator.prototype._n = function (s) {
+        var u = this.out;
+        if (!u)
+            return;
+        this.active++;
+        s._add(new FCIL(u, this));
+    };
+    FlattenConcOperator.prototype._e = function (err) {
+        var u = this.out;
+        if (!u)
+            return;
+        u._e(err);
+    };
+    FlattenConcOperator.prototype._c = function () {
+        this.less();
+    };
+    return FlattenConcOperator;
+}());
+exports.FlattenConcOperator = FlattenConcOperator;
+
+function flattenConcurrently(ins) {
+    return new core_1.Stream(new FlattenConcOperator(ins));
+}
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.default = flattenConcurrently;
+
+},{"../core":1}],8:[function(require,module,exports){
+"use strict";
+var core_1 = require('../core');
+var FSInner = (function () {
+    function FSInner(out, op) {
+        this.out = out;
+        this.op = op;
+    }
+    FSInner.prototype._n = function (t) {
+        this.out._n(t);
+    };
+    FSInner.prototype._e = function (err) {
+        this.out._e(err);
+    };
+    FSInner.prototype._c = function () {
+        this.op.less();
+    };
+    return FSInner;
+}());
+var FlattenSeqOperator = (function () {
+    function FlattenSeqOperator(ins) {
+        this.ins = ins;
+        this.type = 'flattenSequentially';
+        this.open = true;
+        this.active = false;
+        this.seq = [];
+        this.out = null;
+    }
+    FlattenSeqOperator.prototype._start = function (out) {
+        this.out = out;
+        this.ins._add(this);
+    };
+    FlattenSeqOperator.prototype._stop = function () {
+        this.ins._remove(this);
+        this.open = true;
+        this.active = false;
+        this.seq = [];
+        this.out = null;
+    };
+    FlattenSeqOperator.prototype.less = function () {
+        this.active = false;
+        var seq = this.seq;
+        if (seq.length > 0) {
+            this._n(seq.shift());
+        }
+        if (!this.open && !this.active) {
+            this.out._c();
+        }
+    };
+    FlattenSeqOperator.prototype._n = function (s) {
+        var u = this.out;
+        if (!u)
+            return;
+        if (this.active) {
+            this.seq.push(s);
+        }
+        else {
+            this.active = true;
+            s._add(new FSInner(u, this));
+        }
+    };
+    FlattenSeqOperator.prototype._e = function (err) {
+        var u = this.out;
+        if (!u)
+            return;
+        u._e(err);
+    };
+    FlattenSeqOperator.prototype._c = function () {
+        var u = this.out;
+        if (!u)
+            return;
+        this.open = false;
+        if (this.seq.length === 0) {
+            u._c();
+        }
+    };
+    return FlattenSeqOperator;
+}());
+exports.FlattenSeqOperator = FlattenSeqOperator;
+
+function flattenSequentially(ins) {
+    return new core_1.Stream(new FlattenSeqOperator(ins));
+}
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.default = flattenSequentially;
+
+},{"../core":1}],9:[function(require,module,exports){
+"use strict";
+var core_1 = require('../core');
+var DiagramProducer = (function () {
+    function DiagramProducer(diagram, opt) {
+        this.diagram = diagram.trim();
+        this.errorVal = (opt && opt.errorValue) ? opt.errorValue : '#';
+        this.timeUnit = (opt && opt.timeUnit) ? opt.timeUnit : 20;
+        this.values = (opt && opt.values) ? opt.values : {};
+        this.tasks = [];
+    }
+    DiagramProducer.prototype._start = function (out) {
+        var L = this.diagram.length;
+        for (var i = 0; i < L; i++) {
+            var c = this.diagram[i];
+            var time = this.timeUnit * i;
+            switch (c) {
+                case '-':
+                    break;
+                case '#':
+                    this.schedule({ type: 'error', value: this.errorVal, time: time }, out);
+                    break;
+                case '|':
+                    this.schedule({ type: 'complete', time: time }, out);
+                    break;
+                default:
+                    var val = this.values.hasOwnProperty(c) ? this.values[c] : c;
+                    this.schedule({ type: 'next', value: val, time: time }, out);
+                    break;
+            }
+        }
+    };
+    DiagramProducer.prototype.schedule = function (notification, out) {
+        var id = setInterval(function () {
+            switch (notification.type) {
+                case 'next':
+                    out._n(notification.value);
+                    break;
+                case 'error':
+                    out._e(notification.value);
+                    break;
+                case 'complete':
+                    out._c();
+                    break;
+            }
+            clearInterval(id);
+        }, notification.time);
+    };
+    DiagramProducer.prototype._stop = function () {
+        this.tasks.forEach(function (id) { return clearInterval(id); });
+    };
+    return DiagramProducer;
+}());
+exports.DiagramProducer = DiagramProducer;
+
+function fromDiagram(diagram, options) {
+    return new core_1.Stream(new DiagramProducer(diagram, options));
+}
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.default = fromDiagram;
+
+},{"../core":1}],10:[function(require,module,exports){
+"use strict";
+var core_1 = require('../core');
+var DOMEventProducer = (function () {
+    function DOMEventProducer(node, eventType, useCapture) {
+        this.node = node;
+        this.eventType = eventType;
+        this.useCapture = useCapture;
+        this.type = 'fromEvent';
+    }
+    DOMEventProducer.prototype._start = function (out) {
+        this.listener = function (e) { return out._n(e); };
+        this.node.addEventListener(this.eventType, this.listener, this.useCapture);
+    };
+    DOMEventProducer.prototype._stop = function () {
+        this.node.removeEventListener(this.eventType, this.listener, this.useCapture);
+        this.listener = null;
+    };
+    return DOMEventProducer;
+}());
+exports.DOMEventProducer = DOMEventProducer;
+var NodeEventProducer = (function () {
+    function NodeEventProducer(node, eventName) {
+        this.node = node;
+        this.eventName = eventName;
+        this.type = 'fromEvent';
+    }
+    NodeEventProducer.prototype._start = function (out) {
+        this.listener = function () {
+            var args = [];
+            for (var _i = 0; _i < arguments.length; _i++) {
+                args[_i - 0] = arguments[_i];
+            }
+            return (args.length > 1) ? out._n(args) : out._n(args[0]);
+        };
+        this.node.addListener(this.eventName, this.listener);
+    };
+    NodeEventProducer.prototype._stop = function () {
+        this.node.removeListener(this.eventName, this.listener);
+        this.listener = null;
+    };
+    return NodeEventProducer;
+}());
+exports.NodeEventProducer = NodeEventProducer;
+function isEmitter(element) {
+    return element.emit && element.addListener;
+}
+
+function fromEvent(element, eventName, useCapture) {
+    if (useCapture === void 0) { useCapture = false; }
+    if (isEmitter(element)) {
+        return new core_1.Stream(new NodeEventProducer(element, eventName));
+    }
+    else {
+        return new core_1.Stream(new DOMEventProducer(element, eventName, useCapture));
+    }
+}
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.default = fromEvent;
+
+},{"../core":1}],11:[function(require,module,exports){
+"use strict";
+var core_1 = require('../core');
+var PairwiseOperator = (function () {
+    function PairwiseOperator(ins) {
+        this.ins = ins;
+        this.type = 'pairwise';
+        this.val = null;
+        this.has = false;
+        this.out = null;
+    }
+    PairwiseOperator.prototype._start = function (out) {
+        this.out = out;
+        this.ins._add(this);
+    };
+    PairwiseOperator.prototype._stop = function () {
+        this.ins._remove(this);
+        this.has = false;
+        this.out = null;
+        this.val = null;
+    };
+    PairwiseOperator.prototype._n = function (t) {
+        var u = this.out;
+        if (!u)
+            return;
+        if (this.has) {
+            u._n([this.val, t]);
+        }
+        this.val = t;
+        this.has = true;
+    };
+    PairwiseOperator.prototype._e = function (err) {
+        var u = this.out;
+        if (!u)
+            return;
+        u._e(err);
+    };
+    PairwiseOperator.prototype._c = function () {
+        var u = this.out;
+        if (!u)
+            return;
+        u._c();
+    };
+    return PairwiseOperator;
+}());
+
+function pairwise(ins) {
+    return new core_1.Stream(new PairwiseOperator(ins));
+}
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.default = pairwise;
+
+},{"../core":1}],12:[function(require,module,exports){
+"use strict";
+var core_1 = require('../core');
+var SeparatorIL = (function () {
+    function SeparatorIL(out, op) {
+        this.out = out;
+        this.op = op;
+    }
+    SeparatorIL.prototype._n = function (t) {
+        this.op.up();
+    };
+    SeparatorIL.prototype._e = function (err) {
+        this.out._e(err);
+    };
+    SeparatorIL.prototype._c = function () {
+        this.op.curr._c();
+        this.out._c();
+    };
+    return SeparatorIL;
+}());
+var SplitOperator = (function () {
+    function SplitOperator(s, 
+        ins) {
+        this.s = s;
+        this.ins = ins;
+        this.type = 'split';
+        this.curr = new core_1.Stream();
+        this.out = null;
+        this.sil = core_1.NO_IL; 
+    }
+    SplitOperator.prototype._start = function (out) {
+        this.out = out;
+        this.s._add(this.sil = new SeparatorIL(out, this));
+        this.ins._add(this);
+        out._n(this.curr);
+    };
+    SplitOperator.prototype._stop = function () {
+        this.ins._remove(this);
+        this.s._remove(this.sil);
+        this.curr = new core_1.Stream();
+        this.out = null;
+        this.sil = core_1.NO_IL;
+    };
+    SplitOperator.prototype.up = function () {
+        this.curr._c();
+        this.out._n(this.curr = new core_1.Stream());
+    };
+    SplitOperator.prototype._n = function (t) {
+        if (!this.out)
+            return;
+        this.curr._n(t);
+    };
+    SplitOperator.prototype._e = function (err) {
+        var u = this.out;
+        if (!u)
+            return;
+        u._e(err);
+    };
+    SplitOperator.prototype._c = function () {
+        var u = this.out;
+        if (!u)
+            return;
+        this.curr._c();
+        u._c();
+    };
+    return SplitOperator;
+}());
+exports.SplitOperator = SplitOperator;
+
+function split(separator) {
+    return function splitOperator(ins) {
+        return new core_1.Stream(new SplitOperator(separator, ins));
+    };
+}
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.default = split;
+
+},{"../core":1}],13:[function(require,module,exports){
+"use strict";
+var core_1 = require('../core');
+var concat_1 = require('./concat');
+function interpolate(y, from, to) {
+    return (from * (1 - y) + to * y);
+}
+function flip(fn) {
+    return function (x) { return 1 - fn(1 - x); };
+}
+function createEasing(fn) {
+    var fnFlipped = flip(fn);
+    return {
+        easeIn: function (x, from, to) {
+            return interpolate(fn(x), from, to);
+        },
+        easeOut: function (x, from, to) {
+            return interpolate(fnFlipped(x), from, to);
+        },
+        easeInOut: function (x, from, to) {
+            var y = (x < 0.5) ?
+                (fn(2 * x) * 0.5) :
+                (0.5 + fnFlipped(2 * (x - 0.5)) * 0.5);
+            return interpolate(y, from, to);
+        }
+    };
+}
+;
+var easingPower2 = createEasing(function (x) { return x * x; });
+var easingPower3 = createEasing(function (x) { return x * x * x; });
+var easingPower4 = createEasing(function (x) {
+    var xx = x * x;
+    return xx * xx;
+});
+var EXP_WEIGHT = 6;
+var EXP_MAX = Math.exp(EXP_WEIGHT) - 1;
+function expFn(x) {
+    return (Math.exp(x * EXP_WEIGHT) - 1) / EXP_MAX;
+}
+var easingExponential = createEasing(expFn);
+var OVERSHOOT = 1.70158;
+var easingBack = createEasing(function (x) { return x * x * ((OVERSHOOT + 1) * x - OVERSHOOT); });
+var PARAM1 = 7.5625;
+var PARAM2 = 2.75;
+function easeOutFn(x) {
+    var z = x;
+    if (z < 1 / PARAM2) {
+        return (PARAM1 * z * z);
+    }
+    else if (z < 2 / PARAM2) {
+        return (PARAM1 * (z -= 1.5 / PARAM2) * z + 0.75);
+    }
+    else if (z < 2.5 / PARAM2) {
+        return (PARAM1 * (z -= 2.25 / PARAM2) * z + 0.9375);
+    }
+    else {
+        return (PARAM1 * (z -= 2.625 / PARAM2) * z + 0.984375);
+    }
+}
+var easingBounce = createEasing(function (x) { return 1 - easeOutFn(1 - x); });
+var easingCirc = createEasing(function (x) { return -(Math.sqrt(1 - x * x) - 1); });
+var PERIOD = 0.3;
+var OVERSHOOT_ELASTIC = PERIOD / 4;
+var AMPLITUDE = 1;
+function elasticIn(x) {
+    var z = x;
+    if (z <= 0) {
+        return 0;
+    }
+    else if (z >= 1) {
+        return 1;
+    }
+    else {
+        z -= 1;
+        return -(AMPLITUDE * Math.pow(2, 10 * z))
+            * Math.sin((z - OVERSHOOT_ELASTIC) * (2 * Math.PI) / PERIOD);
+    }
+}
+var easingElastic = createEasing(elasticIn);
+var HALF_PI = Math.PI * 0.5;
+var easingSine = createEasing(function (x) { return 1 - Math.cos(x * HALF_PI); });
+var DEFAULT_INTERVAL = 15;
+
+function tween(_a) {
+    var from = _a.from, to = _a.to, duration = _a.duration, _b = _a.ease, ease = _b === void 0 ? tweenFactory.linear.ease : _b, _c = _a.interval, interval = _c === void 0 ? DEFAULT_INTERVAL : _c;
+    var totalTicks = Math.round(duration / interval);
+    return core_1.Stream.periodic(interval)
+        .take(totalTicks)
+        .map(function (tick) { return ease(tick / totalTicks, from, to); })
+        .compose(function (s) { return concat_1.default(s, core_1.Stream.of(to)); });
+}
+var tweenFactory = tween;
+tweenFactory.linear = { ease: interpolate };
+tweenFactory.power2 = easingPower2;
+tweenFactory.power3 = easingPower3;
+tweenFactory.power4 = easingPower4;
+tweenFactory.exponential = easingExponential;
+tweenFactory.back = easingBack;
+tweenFactory.bounce = easingBounce;
+tweenFactory.circular = easingCirc;
+tweenFactory.elastic = easingElastic;
+tweenFactory.sine = easingSine;
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.default = tweenFactory;
+
+},{"../core":1,"./concat":2}],14:[function(require,module,exports){
+"use strict";
 var core_1 = require('./core');
 exports.Stream = core_1.Stream;
 exports.MemoryStream = core_1.MemoryStream;
+var concat_1 = require('./extra/concat');
+exports.concat = concat_1.default;
+var debounce_1 = require('./extra/debounce');
+exports.debounce = debounce_1.default;
+var delay_1 = require('./extra/delay');
+exports.delay = delay_1.default;
+var dropRepeats_1 = require('./extra/dropRepeats');
+exports.dropRepeats = dropRepeats_1.default;
+var dropUntil_1 = require('./extra/dropUntil');
+exports.dropUntil = dropUntil_1.default;
+var flattenConcurrently_1 = require('./extra/flattenConcurrently');
+exports.flattenConcurrently = flattenConcurrently_1.default;
+var flattenSequentially_1 = require('./extra/flattenSequentially');
+exports.flattenSequentially = flattenSequentially_1.default;
+var fromDiagram_1 = require('./extra/fromDiagram');
+exports.fromDiagram = fromDiagram_1.default;
+var fromEvent_1 = require('./extra/fromEvent');
+exports.fromEvent = fromEvent_1.default;
+var pairwise_1 = require('./extra/pairwise');
+exports.pairwise = pairwise_1.default;
+var split_1 = require('./extra/split');
+exports.split = split_1.default;
+var tween_1 = require('./extra/tween');
+exports.tween = tween_1.default;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.default = core_1.Stream;
 
-},{"./core":1}]},{},[2])(2)
+},{"./core":1,"./extra/concat":2,"./extra/debounce":3,"./extra/delay":4,"./extra/dropRepeats":5,"./extra/dropUntil":6,"./extra/flattenConcurrently":7,"./extra/flattenSequentially":8,"./extra/fromDiagram":9,"./extra/fromEvent":10,"./extra/pairwise":11,"./extra/split":12,"./extra/tween":13}]},{},[14])(14)
 });
